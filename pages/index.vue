@@ -3,14 +3,12 @@ import { useOperationsStore } from '~/stores/operations'
 
 const store = useOperationsStore()
 const { data } = await useFetch('/api/operations')
-const { reconnect } = useRealtime((event) => {
-  if (event.type === 'connection') store.connection = event.payload.startsWith('在线') ? '在线' : '重连中'
-  if (event.type === 'permit-update') store.latestAlert = event.payload
-})
 const counts = computed(() => ({
   active: store.permits.filter((item) => ['执行中', '待结束'].includes(item.status)).length,
   pending: store.permits.filter((item) => ['待复核', '待执行'].includes(item.status)).length,
-  conflicts: store.permits.filter((item) => item.reviewRequired).length,
+  occupancy: store.occupancyConflicts.length,
+  revision: store.openConflicts.length - store.occupancyConflicts.length,
+  queued: store.queuedCount + store.failedCount,
 }))
 </script>
 
@@ -18,14 +16,19 @@ const counts = computed(() => ({
   <div class="page">
     <div class="head">
       <div><p class="eyebrow">现场安全运行</p><h1 class="page-title">隔离与作业许可总览</h1><p class="muted">设备状态、隔离锁定、跨班组冲突和许可流转集中于同一视图。</p></div>
-      <div class="inline wrap"><UButton color="gray" variant="outline" icon="i-heroicons-arrow-path" @click="reconnect">检查连接</UButton><UButton color="primary" icon="i-heroicons-document-plus" @click="navigateTo('/permits?new=1')">申请作业许可</UButton></div>
+      <div class="inline wrap"><UButton color="gray" variant="outline" icon="i-heroicons-arrow-path" @click="store.markOnline()">检查连接</UButton><UButton color="primary" icon="i-heroicons-document-plus" @click="navigateTo('/permits?new=1')">申请作业许可</UButton></div>
     </div>
     <UAlert v-if="store.latestAlert" class="mb-4" color="amber" variant="soft" icon="i-heroicons-exclamation-triangle" title="实时冲突提醒" :description="store.latestAlert" :actions="[{ label: '协调并确认', click: store.acceptAlert }]" />
     <section class="grid metrics">
       <article class="panel metric"><span>执行中许可</span><strong>{{ counts.active }}</strong><small>3 个班组在场</small></article>
       <article class="panel metric"><span>待复核 / 待执行</span><strong>{{ counts.pending }}</strong><small>最早 18:00 开工</small></article>
-      <article class="panel metric"><span>隔离冲突</span><strong class="danger">{{ counts.conflicts }}</strong><small>必须复核后推进</small></article>
+      <article class="panel metric"><span>占用冲突</span><strong class="danger">{{ counts.occupancy }}</strong><small>含修订冲突 {{ counts.revision }} 起</small></article>
+      <article class="panel metric"><span>待同步补传</span><strong :class="{ danger: store.failedCount > 0 }">{{ counts.queued }}</strong><small>断网记录回网逐条补传</small></article>
       <article class="panel metric"><span>设备在线</span><strong>{{ data?.onlineDevices }}/{{ data?.totalDevices }}</strong><small>平均风速 {{ data?.windSpeed }} m/s</small></article>
+    </section>
+    <section v-if="store.openConflicts.length" class="panel p-4 mb-4">
+      <div class="panel-head"><div><h2>占用冲突与待确认</h2><p class="muted">同一隔离点只保留一个有效占用，其余提交留待值班负责人确认</p></div><UBadge color="red" variant="subtle">{{ store.openConflicts.length }} 起待处理</UBadge></div>
+      <div v-for="conflict in store.openConflicts" :key="conflict.id" class="conflict-row"><div><b>{{ conflict.permitId }}<template v-if="conflict.pointId"> / {{ conflict.pointId }}</template></b><p class="muted">{{ conflict.reason }}（本机 r{{ conflict.localRevision }} / 远端 r{{ conflict.remoteRevision }}）</p></div><div class="inline"><UButton size="xs" color="primary" variant="soft" @click="store.resolveConflict(conflict.id, '保留本地')">保留本机</UButton><UButton size="xs" color="gray" variant="ghost" @click="store.resolveConflict(conflict.id, '采用远端')">采用远端</UButton></div></div>
     </section>
     <section class="grid main-grid">
       <article class="panel p-4">
@@ -43,6 +46,6 @@ const counts = computed(() => ({
 </template>
 
 <style scoped>
-.head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px}.head h1{margin:3px 0 7px}.head p{margin:0}.eyebrow{font-size:12px;color:#2563eb;font-weight:700}.metrics{grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.metric{padding:17px}.main-grid{grid-template-columns:minmax(0,1.65fr) minmax(290px,.7fr);gap:16px}.panel-head{display:flex;justify-content:space-between;margin-bottom:12px}.panel h2{font-size:17px;margin:0 0 12px}.panel-head h2{margin:0}.panel-head p{font-size:12px;margin:3px 0}.block,.device-row small{display:block}.side-grid{gap:14px}.device-row,.condition{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid #edf0f5}.device-row{justify-content:flex-start}.device-row div{flex:1}.dot{width:9px;height:9px;border-radius:50%}.dot.green{background:#22c55e}.dot.amber{background:#f59e0b}.dot.red{background:#ef4444}.condition{font-size:14px}.condition span{color:#667085}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px}.head h1{margin:3px 0 7px}.head p{margin:0}.eyebrow{font-size:12px;color:#2563eb;font-weight:700}.metrics{grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px}.metric{padding:17px}.conflict-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #edf0f5}.conflict-row p{margin:4px 0 0;font-size:12px}.main-grid{grid-template-columns:minmax(0,1.65fr) minmax(290px,.7fr);gap:16px}.panel-head{display:flex;justify-content:space-between;margin-bottom:12px}.panel h2{font-size:17px;margin:0 0 12px}.panel-head h2{margin:0}.panel-head p{font-size:12px;margin:3px 0}.block,.device-row small{display:block}.side-grid{gap:14px}.device-row,.condition{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid #edf0f5}.device-row{justify-content:flex-start}.device-row div{flex:1}.dot{width:9px;height:9px;border-radius:50%}.dot.green{background:#22c55e}.dot.amber{background:#f59e0b}.dot.red{background:#ef4444}.condition{font-size:14px}.condition span{color:#667085}
 @media(max-width:1100px){.metrics{grid-template-columns:1fr 1fr}.main-grid{grid-template-columns:1fr}}@media(max-width:620px){.head{flex-direction:column}.metrics{grid-template-columns:1fr}}
 </style>
