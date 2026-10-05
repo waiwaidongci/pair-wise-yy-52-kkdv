@@ -4,7 +4,10 @@ import { useOperationsStore } from '~/stores/operations'
 const store = useOperationsStore()
 const { data } = await useFetch('/api/operations')
 const { reconnect } = useRealtime((event) => {
-  if (event.type === 'connection') store.connection = event.payload.startsWith('在线') ? '在线' : '重连中'
+  if (event.type === 'connection') {
+    if (event.payload.startsWith('在线')) void store.goOnline()
+    else store.goOffline()
+  }
   if (event.type === 'permit-update') store.latestAlert = event.payload
 })
 const counts = computed(() => ({
@@ -27,6 +30,13 @@ const counts = computed(() => ({
       <article class="panel metric"><span>隔离冲突</span><strong class="danger">{{ counts.conflicts }}</strong><small>必须复核后推进</small></article>
       <article class="panel metric"><span>设备在线</span><strong>{{ data?.onlineDevices }}/{{ data?.totalDevices }}</strong><small>平均风速 {{ data?.windSpeed }} m/s</small></article>
     </section>
+    <section v-if="store.conflictCount" class="panel p-4 conflict-panel">
+      <div class="panel-head"><div><h2>占用冲突 · 待值班负责人确认</h2><p class="muted">断网期间的现场确认与远端修订冲突，同一隔离点只保留一个有效占用</p></div><UBadge color="red" variant="solid">{{ store.conflictCount }} 待确认</UBadge></div>
+      <div v-for="conflict in store.pendingConflicts" :key="conflict.id" class="conflict-row">
+        <div class="conflict-info"><UBadge color="red" variant="subtle">冲突</UBadge><div><b>{{ conflict.pointId }}</b> · {{ conflict.reason }}<small>{{ conflict.actor }} · {{ conflict.createdAt }} · {{ conflict.id }}</small></div></div>
+        <div class="inline wrap"><UButton size="xs" color="green" variant="soft" icon="i-heroicons-check" @click="store.resolveConflict(conflict.id, '保留')">确认保留{{ conflict.winnerActor ? ' ' + conflict.winnerActor : '' }}占用</UButton><UButton size="xs" color="gray" variant="outline" icon="i-heroicons-x-mark" @click="store.resolveConflict(conflict.id, '放弃')">放弃该点占用</UButton></div>
+      </div>
+    </section>
     <section class="grid main-grid">
       <article class="panel p-4">
         <div class="panel-head"><div><h2>当前作业状态</h2><p class="muted">按风险和开始时间排序</p></div><UBadge color="blue" variant="subtle">版本 r{{ data?.revision }}</UBadge></div>
@@ -45,4 +55,10 @@ const counts = computed(() => ({
 <style scoped>
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px}.head h1{margin:3px 0 7px}.head p{margin:0}.eyebrow{font-size:12px;color:#2563eb;font-weight:700}.metrics{grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.metric{padding:17px}.main-grid{grid-template-columns:minmax(0,1.65fr) minmax(290px,.7fr);gap:16px}.panel-head{display:flex;justify-content:space-between;margin-bottom:12px}.panel h2{font-size:17px;margin:0 0 12px}.panel-head h2{margin:0}.panel-head p{font-size:12px;margin:3px 0}.block,.device-row small{display:block}.side-grid{gap:14px}.device-row,.condition{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid #edf0f5}.device-row{justify-content:flex-start}.device-row div{flex:1}.dot{width:9px;height:9px;border-radius:50%}.dot.green{background:#22c55e}.dot.amber{background:#f59e0b}.dot.red{background:#ef4444}.condition{font-size:14px}.condition span{color:#667085}
 @media(max-width:1100px){.metrics{grid-template-columns:1fr 1fr}.main-grid{grid-template-columns:1fr}}@media(max-width:620px){.head{flex-direction:column}.metrics{grid-template-columns:1fr}}
+.conflict-panel{margin-bottom:16px;border-left:4px solid #dc2626}
+.conflict-panel .panel-head{margin-bottom:10px}
+.conflict-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #edf0f5}
+.conflict-row:last-child{border-bottom:0}
+.conflict-info{display:flex;align-items:flex-start;gap:10px;flex:1}
+.conflict-info small{display:block;color:#667085;margin-top:3px;font-size:12px}
 </style>

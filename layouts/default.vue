@@ -26,8 +26,15 @@ const nav = [
         <UButton class="mobile-menu" icon="i-heroicons-bars-3" color="gray" variant="ghost" @click="open = !open" />
         <div><b>运行中 · A 区集电线路检修</b><span class="muted desktop-only">值班负责人：李骁 · 2026-09-29 16:48</span></div>
         <span class="flex-1" />
-        <UBadge :color="store.connection === '在线' ? 'green' : 'amber'" variant="subtle">{{ store.connection }}</UBadge>
-        <UButton v-if="store.pendingRetry" size="sm" color="amber" variant="soft" @click="store.retryPending">重试 {{ store.pendingRetry }} 项</UButton>
+        <UButton
+          size="sm"
+          :color="store.connection === '在线' ? 'green' : 'red'"
+          :variant="store.connection === '在线' ? 'soft' : 'solid'"
+          :icon="store.connection === '在线' ? 'i-heroicons-wifi' : 'i-heroicons-no-symbol'"
+          @click="store.connection === '在线' ? store.goOffline() : store.goOnline()"
+        >{{ store.connection === '在线' ? '在线 · 断网演练' : '断网 · 点我恢复' }}</UButton>
+        <UButton v-if="store.conflictCount" size="sm" color="red" variant="solid" icon="i-heroicons-exclamation-triangle" @click="navigateTo('/')">占用冲突 {{ store.conflictCount }}</UButton>
+        <UButton v-if="store.pendingCount" size="sm" color="amber" variant="soft" icon="i-heroicons-arrow-path" @click="store.retryFailed()">补传 {{ store.pendingCount }} 项</UButton>
         <UButton icon="i-heroicons-plus" color="primary" @click="navigateTo('/permits?new=1')">新建许可</UButton>
       </header>
       <main class="main"><slot /></main>
